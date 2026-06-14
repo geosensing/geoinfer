@@ -29,12 +29,14 @@ def _make_test_data(
     h = rng.poisson(lam, n)
     w = rng.binomial(h, true_p)
 
-    return pd.DataFrame({
-        "n_women": w,
-        "n_people": h,
-        "itinerary_id": cluster_ids,
-        "walk_id": cluster_ids,
-    })
+    return pd.DataFrame(
+        {
+            "n_women": w,
+            "n_people": h,
+            "itinerary_id": cluster_ids,
+            "walk_id": cluster_ids,
+        }
+    )
 
 
 class TestDesigns(unittest.TestCase):
@@ -154,8 +156,13 @@ class TestEstimateBasic(unittest.TestCase):
     def test_bootstrap_produces_ci(self):
         design = PointDesign(sampling="srs", cluster_var="itinerary_id")
         result = estimate(
-            self.df, "n_women", "n_people", design=design,
-            bootstrap=True, bootstrap_reps=199, seed=99,
+            self.df,
+            "n_women",
+            "n_people",
+            design=design,
+            bootstrap=True,
+            bootstrap_reps=199,
+            seed=99,
         )
         self.assertIsNotNone(result.ratio_ci.bootstrap)
         self.assertIsNotNone(result.ratio_se.bootstrap)
@@ -177,22 +184,26 @@ class TestEstimateEdgeCases(unittest.TestCase):
         self.assertAlmostEqual(result.photo_mean, 0.3)
 
     def test_two_clusters(self):
-        df = pd.DataFrame({
-            "n_women": [2, 3, 4, 5],
-            "n_people": [10, 10, 10, 10],
-            "cluster": [0, 0, 1, 1],
-        })
+        df = pd.DataFrame(
+            {
+                "n_women": [2, 3, 4, 5],
+                "n_people": [10, 10, 10, 10],
+                "cluster": [0, 0, 1, 1],
+            }
+        )
         design = PointDesign(cluster_var="cluster")
         result = estimate(df, "n_women", "n_people", design=design, bootstrap=False)
         self.assertEqual(result.n_clusters, 2)
         self.assertGreater(result.ratio_se.cluster, 0)
 
     def test_single_cluster(self):
-        df = pd.DataFrame({
-            "n_women": [2, 3, 4],
-            "n_people": [10, 10, 10],
-            "cluster": [0, 0, 0],
-        })
+        df = pd.DataFrame(
+            {
+                "n_women": [2, 3, 4],
+                "n_people": [10, 10, 10],
+                "cluster": [0, 0, 0],
+            }
+        )
         design = PointDesign(cluster_var="cluster")
         result = estimate(df, "n_women", "n_people", design=design, bootstrap=False)
         self.assertEqual(result.n_clusters, 1)
@@ -209,8 +220,9 @@ class TestCoverageSimulation(unittest.TestCase):
     3. CI achieves nominal coverage
     """
 
-    def _run_coverage(self, design_fn, n=200, g=10, true_p=0.3, lam=8.0,
-                      n_sims=300, ci_key="recommended"):
+    def _run_coverage(
+        self, design_fn, n=200, g=10, true_p=0.3, lam=8.0, n_sims=300, ci_key="recommended"
+    ):
         """Run coverage simulation and return metrics."""
         rng = np.random.default_rng(42)
 
@@ -236,10 +248,18 @@ class TestCoverageSimulation(unittest.TestCase):
             ratio_ses.append(result.ratio_se.recommended)
             mean_ses.append(result.photo_mean_se.recommended)
 
-            lo_r, hi_r = getattr(result.ratio_ci, ci_key) if ci_key != "recommended" else result.ratio_ci.recommended
-            lo_m, hi_m = getattr(result.photo_mean_ci, ci_key) if ci_key != "recommended" else result.photo_mean_ci.recommended
-            ratio_covers += (lo_r <= true_p <= hi_r)
-            mean_covers += (lo_m <= true_p <= hi_m)
+            lo_r, hi_r = (
+                getattr(result.ratio_ci, ci_key)
+                if ci_key != "recommended"
+                else result.ratio_ci.recommended
+            )
+            lo_m, hi_m = (
+                getattr(result.photo_mean_ci, ci_key)
+                if ci_key != "recommended"
+                else result.photo_mean_ci.recommended
+            )
+            ratio_covers += lo_r <= true_p <= hi_r
+            mean_covers += lo_m <= true_p <= hi_m
 
         ratio_hats = np.array(ratio_hats)
         mean_hats = np.array(mean_hats)

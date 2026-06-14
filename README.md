@@ -2,6 +2,10 @@
 
 Design-based inference for spatially distributed observation surveys.
 
+[![PyPI](https://img.shields.io/pypi/v/geoinfer.svg)](https://pypi.org/project/geoinfer/)
+[![Downloads](https://static.pepy.tech/badge/geoinfer)](https://pepy.tech/project/geoinfer)
+[![CI](https://github.com/geosensing/geoinfer/actions/workflows/ci.yml/badge.svg)](https://github.com/geosensing/geoinfer/actions/workflows/ci.yml)
+[![Docs](https://github.com/geosensing/geoinfer/actions/workflows/docs.yml/badge.svg)](https://geosensing.github.io/geoinfer/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 ## What this does

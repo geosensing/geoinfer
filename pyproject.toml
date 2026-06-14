@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.9.14,<0.10.0"]
+build-backend = "uv_build"
 
 [project]
 name = "geoinfer"
@@ -31,12 +31,34 @@ dependencies = [
     "scipy>=1.10.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/geosensing/geoinfer"
+Repository = "https://github.com/geosensing/geoinfer"
+Documentation = "https://geosensing.github.io/geoinfer/"
+Issues = "https://github.com/geosensing/geoinfer/issues"
+
 [project.optional-dependencies]
 test = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]
 dev = ["ruff>=0.1.0", "mypy>=1.5.0"]
 # The real geo_sampling -> allocator pipeline, used by geoinfer.pipeline and the
 # validation example. Imported lazily; core geoinfer needs none of it.
 pipeline = ["allocator", "geo-sampling"]
+
+[tool.uv.build-backend]
+module-name = "geoinfer"
+module-root = ""
+
+[dependency-groups]
+dev = ["ruff>=0.1.0", "mypy>=1.5.0", "pandas-stubs", "scipy-stubs"]
+test = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]
+docs = [
+    "sphinx>=7.0",
+    "furo",
+    "myst-parser>=2.0",
+    "linkify-it-py>=2.0",
+    "sphinx-copybutton>=0.5",
+    "sphinx-design>=0.5",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["geoinfer/tests"]
@@ -49,3 +71,12 @@ line-length = 100
 python_version = "3.11"
 warn_return_any = true
 disallow_untyped_defs = true
+exclude = ["geoinfer/tests/"]
+
+[[tool.mypy.overrides]]
+module = ["geoinfer.tests.*"]
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = ["allocator.*", "geo_sampling.*", "scipy.*"]
+ignore_missing_imports = true
