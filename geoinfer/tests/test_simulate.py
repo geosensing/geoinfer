@@ -1,0 +1,87 @@
+"""
+Limiting-case tests for the space-time simulation harness.
+
+These assert the analytically-predicted truth table. They use modest Monte
+Carlo sizes with fixed seeds and deliberately loose thresholds (directional
+inequalities with margin), so they verify the qualitative behavior without
+being flaky.
+"""
+
+import unittest
+import warnings
+
+from geoinfer.simulate import (
+    Pipeline,
+    PopulationFactory,
+    SimConfig,
+    run_pipeline,
+)
+
+
+def _run(cfg, pipe, se_method="auto", spatial_diag=False):
+    fac = PopulationFactory(cfg)
+    return run_pipeline(fac, pipe, cfg, se_method=se_method, spatial_diag=spatial_diag)
+
+
+class TestSpatialLimits(unittest.TestCase):
+    def test_corr_zero_compact_is_most_efficient(self):
+        """White-noise field: compact (most points/budget) has the lowest SD."""
+        cfg = SimConfig(range_s_m=0.0, diurnal_amp=0.0, sd_t=0.0, n_sims=80, grid_n=14)
+        compact = _run(cfg, Pipeline("compact", routing="compact"))
+        dispersed = _run(cfg, Pipeline("dispersed", routing="dispersed"))
+        self.assertGreater(compact.mean_n, dispersed.mean_n)
+        self.assertLess(compact.true_sd, dispersed.true_sd)
+
+    def test_corr_zero_naive_se_well_calibrated(self):
+        """No correlation: naive SE is honest (coverage near nominal)."""
+        cfg = SimConfig(range_s_m=0.0, diurnal_amp=0.0, sd_t=0.0, n_sims=120, grid_n=14)
+        r = _run(cfg, Pipeline("compact", routing="compact"), se_method="naive")
+        self.assertGreater(r.coverage, 0.88)
+
+    def test_corr_huge_collapses_effective_n(self):
+        """Near-constant field: spatial n_eff collapses far below the point count."""
+        cfg = SimConfig(range_s_m=1e7, diurnal_amp=0.0, sd_t=0.0, n_sims=60, grid_n=14)
+        r = _run(cfg, Pipeline("compact", routing="compact"), spatial_diag=True)
+        self.assertGreater(r.mean_n, 50)
+        self.assertLess(r.mean_n_eff_space, 0.25 * r.mean_n)
+
+
+class TestCoverageCliff(unittest.TestCase):
+    def test_naive_se_breaks_under_correlation_cluster_holds(self):
+        """Compact + correlation: naive SE undercovers; cluster/WCB stay valid.
+
+        With K=8 itineraries the cluster-robust t and the wild cluster
+        bootstrap reach ~0.90-0.94 (the gap to nominal 0.95 is the
+        few-clusters limit); naive collapses toward ~0.6.
+        """
+        cfg = SimConfig(range_s_m=2000.0, diurnal_amp=0.0, sd_t=0.0, n_sims=200, grid_n=16)
+        pipe = Pipeline("compact", routing="compact")
+        naive = _run(cfg, pipe, se_method="naive")
+        cluster = _run(cfg, pipe, se_method="cluster")
+        wcb = _run(cfg, pipe, se_method="wcb")
+        self.assertLess(naive.coverage, 0.78)  # cliff
+        self.assertGreater(cluster.coverage, 0.88)  # robust (t_{G-1} CI)
+        self.assertGreater(wcb.coverage, 0.88)  # robust (wild cluster boot)
+        self.assertGreater(cluster.coverage, naive.coverage)
+
+
+class TestTemporalBias(unittest.TestCase):
+    def test_synced_starts_bias_fixed_by_staggering(self):
+        """Strong diurnal effect: synced starts bias beta; staggering fixes it."""
+        cfg = SimConfig(range_s_m=600.0, diurnal_amp=1.5, sd_t=0.0, n_sims=120, grid_n=14)
+        synced = _run(cfg, Pipeline("c", routing="compact", staggered_starts=False))
+        stagger = _run(cfg, Pipeline("c", routing="compact", staggered_starts=True))
+        self.assertGreater(abs(synced.bias), 0.05)
+        self.assertLess(abs(stagger.bias), abs(synced.bias) / 2.0)
+        self.assertGreater(stagger.coverage, synced.coverage)
+
+    def test_no_time_structure_no_bias(self):
+        """No diurnal effect: start-time policy is irrelevant (no bias)."""
+        cfg = SimConfig(range_s_m=600.0, diurnal_amp=0.0, sd_t=0.0, n_sims=100, grid_n=14)
+        synced = _run(cfg, Pipeline("c", routing="compact", staggered_starts=False))
+        self.assertLess(abs(synced.bias), 0.02)
+
+
+if __name__ == "__main__":
+    warnings.simplefilter("ignore")
+    unittest.main()

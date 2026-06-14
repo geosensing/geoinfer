@@ -8,8 +8,6 @@ the inference functions can choose the correct variance estimator.
 The design is metadata about the data, not the data itself.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Literal
 
@@ -64,20 +62,19 @@ class PointDesign:
     def recommended_se_method(self) -> str:
         """Which SE estimator the design recommends as primary.
 
-        Under SRS with post-hoc itinerary clustering, observations are
-        approximately independent (our simulation finding), so the naive
-        SE is correct. The cluster-robust SE is reported as a robustness
-        check. For PPS/GRTS, the Horvitz-Thompson linearization SE
-        (which is cluster-robust by construction) is recommended.
+        Any clustered design (an explicit ``cluster_var``, or PPS/GRTS) gets the
+        cluster-robust SE. Simulation shows that when itineraries bundle nearby
+        points and the outcome is spatially autocorrelated, the naive SE
+        undercovers badly (95% CI coverage falling toward ~0.5 as correlation
+        grows), while the cluster-robust SE — paired with the t_{G-1} CI used
+        for few clusters — holds near nominal. The cost is mild conservatism
+        under genuine independence, where the cluster SE ≈ the naive SE anyway.
+        The naive SE is still reported (and is primary only when there is no
+        clustering at all).
         """
-        if self.sampling == "srs" and self.cluster_var is not None:
-            return "naive"
-        elif self.sampling in ("pps", "grts"):
+        if self.cluster_var is not None or self.sampling in ("pps", "grts"):
             return "cluster"
-        elif self.cluster_var is None:
-            return "naive"
-        else:
-            return "naive"
+        return "naive"
 
     def __post_init__(self) -> None:
         if self.sampling in ("pps", "grts") and self.weight_var is None:

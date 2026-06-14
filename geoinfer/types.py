@@ -5,9 +5,7 @@ Structured dataclasses that carry estimates, standard errors,
 confidence intervals, and diagnostics from the inference pipeline.
 """
 
-from __future__ import annotations
-
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -36,11 +34,11 @@ class SEResult:
 class CIResult:
     """Confidence intervals from multiple methods."""
 
-    normal: tuple[float, float]         # est ± z * se_recommended
-    t: tuple[float, float]              # est ± t_{G-1} * se_recommended
+    normal: tuple[float, float]  # est ± z * se_recommended
+    t: tuple[float, float]  # est ± t_{G-1} * se_recommended
     bootstrap: tuple[float, float] | None  # percentile CI
     recommended: tuple[float, float]
-    level: float                        # e.g. 0.95
+    level: float  # e.g. 0.95
 
 
 @dataclass
@@ -61,9 +59,25 @@ class Diagnostics:
     deff: float
     n_eff: float
 
-    se_ratio_cluster_to_naive: float   # for the photo-mean
+    se_ratio_cluster_to_naive: float  # for the photo-mean
 
-    ratio_bias_approx: float           # O(1/N) bias estimate for ratio
+    ratio_bias_approx: float  # O(1/N) bias estimate for ratio
+
+    # Within-itinerary dependence diagnostics (NaN unless coords/time supplied).
+    # Spatial axis (great-circle meters):
+    morans_i_space: float = float("nan")
+    morans_i_space_p: float = float("nan")
+    variogram_range_m: float = float("nan")
+    spatial_corr_ratio: float = float("nan")  # (sill - nugget) / sill
+    n_eff_space: float = float("nan")
+    # Temporal axis (seconds):
+    morans_i_time: float = float("nan")
+    morans_i_time_p: float = float("nan")
+    variogram_range_s: float = float("nan")
+    temporal_corr_ratio: float = float("nan")
+    n_eff_time: float = float("nan")
+    # Shared: mean within-itinerary vs between-itinerary semivariance ratio.
+    within_between_ratio: float = float("nan")
 
 
 @dataclass
@@ -124,9 +138,32 @@ class InferenceResult:
             f"  Effective N:        {self.diagnostics.n_eff:.1f}",
             f"  SE ratio (cl/nv):   {self.diagnostics.se_ratio_cluster_to_naive:.3f}",
             f"  Ratio bias O(1/N):  {self.diagnostics.ratio_bias_approx:.6f}",
-            "=" * 60,
         ]
+        lines += self._dependence_lines()
+        lines.append("=" * 60)
         return "\n".join(lines)
+
+    def _dependence_lines(self) -> list[str]:
+        """Optional within-itinerary dependence block (only if computed)."""
+        d = self.diagnostics
+        out: list[str] = []
+        if not np.isnan(d.within_between_ratio):
+            out.append(f"  Within/between semivar: {d.within_between_ratio:.3f}")
+        if not np.isnan(d.n_eff_space):
+            out.append(
+                f"  Spatial:  range={d.variogram_range_m:,.0f} m  "
+                f"I={d.morans_i_space:.3f} (p={d.morans_i_space_p:.3f})  "
+                f"n_eff={d.n_eff_space:.1f}"
+            )
+        if not np.isnan(d.n_eff_time):
+            out.append(
+                f"  Temporal: range={d.variogram_range_s:,.0f} s  "
+                f"I={d.morans_i_time:.3f} (p={d.morans_i_time_p:.3f})  "
+                f"n_eff={d.n_eff_time:.1f}"
+            )
+        if out:
+            out = ["", "── Within-itinerary dependence ──", *out]
+        return out
 
     def __repr__(self) -> str:
         return (

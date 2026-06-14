@@ -6,17 +6,23 @@ frame data plus a design object and returns point estimates, standard
 errors, confidence intervals, and diagnostics.
 """
 
-from __future__ import annotations
+import warnings
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
 from scipy import stats as sp_stats
 
-from .designs import Design, PointDesign, WalkDesign
+from . import spatial
+from .designs import Design, PointDesign
 from .types import CIResult, Diagnostics, InferenceResult, SEResult
+
+# Pairwise dependence diagnostics are O(n^2); subsample above this many frames.
+_MAX_DEPENDENCE_POINTS = 2500
 
 
 # ─── Point estimators ────────────────────────────────────────────────
+
 
 def _ratio_estimator(w: np.ndarray, h: np.ndarray) -> float:
     """R_hat = sum(w) / sum(h)."""
@@ -48,6 +54,7 @@ def _ratio_bias_approx(w: np.ndarray, h: np.ndarray) -> float:
 
 # ─── Variance estimators ─────────────────────────────────────────────
 
+
 def _naive_se_ratio(w: np.ndarray, h: np.ndarray) -> float:
     """Naive SE for ratio estimator (delta method, iid assumption)."""
     n = len(w)
@@ -55,7 +62,7 @@ def _naive_se_ratio(w: np.ndarray, h: np.ndarray) -> float:
         return float("nan")
     r = w.sum() / h.sum()
     e = w - r * h
-    v = np.sum(e**2) / (n - 1) / h.sum()**2 * n
+    v = np.sum(e**2) / (n - 1) / h.sum() ** 2 * n
     return float(np.sqrt(v))
 
 
@@ -68,9 +75,7 @@ def _naive_se_mean(w: np.ndarray, h: np.ndarray) -> float:
     return float(np.std(p, ddof=1) / np.sqrt(len(p)))
 
 
-def _cluster_robust_se_ratio(
-    w: np.ndarray, h: np.ndarray, labels: np.ndarray
-) -> float:
+def _cluster_robust_se_ratio(w: np.ndarray, h: np.ndarray, labels: np.ndarray) -> float:
     """Linearization-based cluster-robust SE for ratio estimator."""
     r = _ratio_estimator(w, h)
     if np.isnan(r) or h.sum() == 0:
@@ -91,9 +96,7 @@ def _cluster_robust_se_ratio(
     return float(np.sqrt(v))
 
 
-def _cluster_robust_se_mean(
-    w: np.ndarray, h: np.ndarray, labels: np.ndarray
-) -> float:
+def _cluster_robust_se_mean(w: np.ndarray, h: np.ndarray, labels: np.ndarray) -> float:
     """Cluster-robust SE for photo-level mean."""
     mask = h > 0
     if mask.sum() == 0:
@@ -109,20 +112,83 @@ def _cluster_robust_se_mean(
     if g < 2:
         return float("nan")
 
-    s_g = np.array([
-        np.sum(p[(labels == c) & mask] - theta) if np.any((labels == c) & mask) else 0.0
-        for c in unique
-    ])
+    s_g = np.array(
+        [
+            np.sum(p[(labels == c) & mask] - theta) if np.any((labels == c) & mask) else 0.0
+            for c in unique
+        ]
+    )
 
     v = (g / (g - 1)) * np.sum(s_g**2) / m**2
     return float(np.sqrt(v))
+
+
+def wild_cluster_bootstrap_ci(
+    w: np.ndarray,
+    h: np.ndarray,
+    labels: np.ndarray,
+    reps: int = 999,
+    ci_level: float = 0.95,
+    seed: int = 0,
+) -> tuple[float, float, float]:
+    """Wild cluster bootstrap (percentile-t) CI for the ratio estimator.
+
+    The pairs/cluster bootstrap and the analytic cluster-robust t both
+    under-cover when the number of itineraries G is small. The wild cluster
+    bootstrap (Cameron, Gelbach & Miller 2008) perturbs each cluster's
+    linearized score by a Rademacher (+/-1) weight and studentizes, which
+    restores near-nominal coverage with few clusters.
+
+    Returns:
+        (cluster_robust_se, ci_lo, ci_hi). NaNs if G < 2.
+    """
+    r = _ratio_estimator(w, h)
+    total_h = h.sum()
+    if np.isnan(r) or total_h == 0:
+        return float("nan"), float("nan"), float("nan")
+
+    unique = np.unique(labels)
+    g = len(unique)
+    if g < 2:
+        return float("nan"), float("nan"), float("nan")
+
+    e = w - r * h
+    a = np.array([e[labels == c].sum() for c in unique])
+    a_c = a - a.mean()  # centered cluster scores
+    v_obs = (g / (g - 1)) * np.sum(a_c**2) / total_h**2
+    se = float(np.sqrt(v_obs))
+    if se == 0:
+        return se, r, r
+
+    rng = np.random.default_rng(seed)
+    t_star = np.empty(reps)
+    valid = 0
+    for _ in range(reps):
+        weights = rng.choice(np.array([-1.0, 1.0]), size=g)
+        a_b = weights * a_c
+        delta = a_b.sum() / total_h
+        a_bc = a_b - a_b.mean()
+        v_b = (g / (g - 1)) * np.sum(a_bc**2) / total_h**2
+        if v_b > 0:
+            t_star[valid] = delta / np.sqrt(v_b)
+            valid += 1
+
+    if valid < reps * 0.5:
+        return se, float("nan"), float("nan")
+
+    t_star = t_star[:valid]
+    alpha = 1 - ci_level
+    q_lo = float(np.percentile(t_star, 100 * (alpha / 2)))
+    q_hi = float(np.percentile(t_star, 100 * (1 - alpha / 2)))
+    # Percentile-t: invert t = (r_hat - r) / se.
+    return se, r - se * q_hi, r - se * q_lo
 
 
 def _cluster_bootstrap(
     w: np.ndarray,
     h: np.ndarray,
     labels: np.ndarray,
-    estimator_fn,
+    estimator_fn: Callable[[np.ndarray, np.ndarray], float],
     reps: int = 2000,
     rng: np.random.Generator | None = None,
 ) -> tuple[float, float, float]:
@@ -157,6 +223,7 @@ def _cluster_bootstrap(
 
 # ─── ICC and design effect ───────────────────────────────────────────
 
+
 def _compute_icc(values: np.ndarray, labels: np.ndarray) -> float:
     """Intraclass correlation within clusters."""
     unique = np.unique(labels)
@@ -167,14 +234,8 @@ def _compute_icc(values: np.ndarray, labels: np.ndarray) -> float:
         return float("nan")
 
     grand_mean = values.mean()
-    ssb = sum(
-        np.sum(labels == c) * (values[labels == c].mean() - grand_mean) ** 2
-        for c in unique
-    )
-    ssw = sum(
-        np.sum((values[labels == c] - values[labels == c].mean()) ** 2)
-        for c in unique
-    )
+    ssb = sum(np.sum(labels == c) * (values[labels == c].mean() - grand_mean) ** 2 for c in unique)
+    ssw = sum(np.sum((values[labels == c] - values[labels == c].mean()) ** 2) for c in unique)
 
     msb = ssb / (g - 1)
     msw = ssw / (n - g) if n > g else 0.0
@@ -190,10 +251,104 @@ def _compute_icc(values: np.ndarray, labels: np.ndarray) -> float:
     return float(max(icc, 0.0))
 
 
+# ─── Within-itinerary dependence diagnostics ─────────────────────────
+
+
+def _require_columns(data: pd.DataFrame, cols: list[str]) -> None:
+    """Raise ValueError listing any of ``cols`` absent from ``data``."""
+    missing = [c for c in cols if c not in data.columns]
+    if missing:
+        raise ValueError(
+            f"Columns not found in data: {missing}. Available columns: {list(data.columns)}"
+        )
+
+
+def _axis_diagnostics(values: np.ndarray, dist: np.ndarray, seed: int) -> dict[str, float]:
+    """Variogram range, correlation ratio, effective N, and Moran's I for one axis."""
+    lags, gamma, counts = spatial.empirical_variogram(values, dist)
+    c0, c1, rng_ = spatial.fit_variogram(lags, gamma, counts)
+    corr_ratio = (c1 - c0) / c1 if np.isfinite(c1) and c1 > 0 else float("nan")
+    n_eff = spatial.effective_n(values, dist, c0, c1, rng_)
+    if np.isfinite(rng_) and rng_ > 0:
+        cutoff = rng_
+    else:
+        pos = dist[dist > 0]
+        cutoff = float(np.median(pos)) if pos.size else 0.0
+    mi, mp = spatial.morans_i(values, dist, cutoff, seed=seed)
+    return {
+        "range": rng_,
+        "corr_ratio": corr_ratio,
+        "n_eff": n_eff,
+        "morans_i": mi,
+        "morans_i_p": mp,
+    }
+
+
+def _dependence_diagnostics(
+    data: pd.DataFrame,
+    mask: np.ndarray,
+    p_obs: np.ndarray,
+    labels_pos: np.ndarray,
+    lon_var: str | None,
+    lat_var: str | None,
+    time_var: str | None,
+    seed: int,
+) -> dict[str, float]:
+    """Spatial/temporal within-itinerary dependence on the h>0 frames."""
+    out: dict[str, float] = {}
+    n = len(p_obs)
+    if n < 3:
+        return out
+
+    idx = np.arange(n)
+    if n > _MAX_DEPENDENCE_POINTS:
+        rng = np.random.default_rng(seed)
+        idx = np.sort(rng.choice(n, size=_MAX_DEPENDENCE_POINTS, replace=False))
+        warnings.warn(
+            f"Dependence diagnostics subsampled to {_MAX_DEPENDENCE_POINTS} of "
+            f"{n} positive frames (pairwise cost is O(n^2)).",
+            stacklevel=2,
+        )
+
+    vals = p_obs[idx]
+    sub_labels = labels_pos[idx]
+
+    if len(np.unique(sub_labels)) >= 2:
+        wb = spatial.within_between_contrast(vals, sub_labels)
+        out["within_between_ratio"] = wb["ratio"]
+
+    if lon_var is not None and lat_var is not None:
+        _require_columns(data, [lon_var, lat_var])
+        lon = data[lon_var].to_numpy(dtype=float)[mask][idx]
+        lat = data[lat_var].to_numpy(dtype=float)[mask][idx]
+        sp = _axis_diagnostics(vals, spatial.haversine_matrix(lon, lat), seed)
+        out["variogram_range_m"] = sp["range"]
+        out["spatial_corr_ratio"] = sp["corr_ratio"]
+        out["n_eff_space"] = sp["n_eff"]
+        out["morans_i_space"] = sp["morans_i"]
+        out["morans_i_space_p"] = sp["morans_i_p"]
+
+    if time_var is not None:
+        _require_columns(data, [time_var])
+        ts = data[time_var].to_numpy()[mask][idx]
+        tp = _axis_diagnostics(vals, spatial.time_gap_matrix(ts), seed)
+        out["variogram_range_s"] = tp["range"]
+        out["temporal_corr_ratio"] = tp["corr_ratio"]
+        out["n_eff_time"] = tp["n_eff"]
+        out["morans_i_time"] = tp["morans_i"]
+        out["morans_i_time_p"] = tp["morans_i_p"]
+
+    return out
+
+
 # ─── Confidence interval construction ────────────────────────────────
 
+
 def _build_ci(
-    est: float, se: float, g: int, level: float = 0.95,
+    est: float,
+    se: float,
+    g: int,
+    level: float = 0.95,
     boot_ci: tuple[float, float] | None = None,
     recommended_method: str = "naive",
 ) -> CIResult:
@@ -229,6 +384,7 @@ def _build_ci(
 
 # ─── Main entry point ────────────────────────────────────────────────
 
+
 def estimate(
     data: pd.DataFrame,
     women_var: str = "n_women",
@@ -238,6 +394,9 @@ def estimate(
     bootstrap: bool = True,
     bootstrap_reps: int = 2000,
     seed: int = 42,
+    lon_var: str | None = None,
+    lat_var: str | None = None,
+    time_var: str | None = None,
 ) -> InferenceResult:
     """Estimate population gender ratio with correct standard errors.
 
@@ -263,10 +422,21 @@ def estimate(
         ci_level: Confidence level for intervals (default 0.95).
         bootstrap: Whether to compute cluster bootstrap CIs.
         bootstrap_reps: Number of bootstrap replications.
-        seed: Random seed for bootstrap.
+        seed: Random seed for bootstrap and the dependence diagnostics.
+        lon_var: Column with longitude (decimal degrees). If given together
+            with ``lat_var``, the spatial within-itinerary dependence
+            diagnostics (variogram range, Moran's I, effective spatial N) are
+            computed on the h>0 frames.
+        lat_var: Column with latitude (decimal degrees). See ``lon_var``.
+        time_var: Column with a per-frame timestamp (datetime or epoch
+            seconds). If given, the temporal within-itinerary dependence
+            diagnostics are computed. Independent of the spatial axis: supply
+            either, both, or neither.
 
     Returns:
-        InferenceResult with estimates, SEs, CIs, and diagnostics.
+        InferenceResult with estimates, SEs, CIs, and diagnostics. The spatial
+        and temporal dependence fields of ``diagnostics`` are NaN unless the
+        corresponding coordinate/time columns are supplied.
 
     Example:
         >>> from geoinfer import PointDesign, estimate
@@ -314,10 +484,20 @@ def estimate(
 
     if bootstrap and g >= 3:
         se_ratio_boot, boot_ratio_lo, boot_ratio_hi = _cluster_bootstrap(
-            w, h, labels, _ratio_estimator, reps=bootstrap_reps, rng=rng,
+            w,
+            h,
+            labels,
+            _ratio_estimator,
+            reps=bootstrap_reps,
+            rng=rng,
         )
         se_mean_boot, boot_mean_lo, boot_mean_hi = _cluster_bootstrap(
-            w, h, labels, _photo_mean_estimator, reps=bootstrap_reps, rng=rng,
+            w,
+            h,
+            labels,
+            _photo_mean_estimator,
+            reps=bootstrap_reps,
+            rng=rng,
         )
 
     # ── Select recommended SE ─────────────────────────────────────
@@ -333,24 +513,43 @@ def estimate(
         else:
             recommended = naive
         return SEResult(
-            naive=naive, cluster=cluster, bootstrap=boot,
-            recommended=recommended, method_used=method,
+            naive=naive,
+            cluster=cluster,
+            bootstrap=boot,
+            recommended=recommended,
+            method_used=method,
         )
 
     ratio_se = _pick_se(se_ratio_naive, se_ratio_cluster, se_ratio_boot, rec_method)
     mean_se = _pick_se(se_mean_naive, se_mean_cluster, se_mean_boot, rec_method)
 
     # ── Confidence intervals ──────────────────────────────────────
-    boot_ratio_ci = (boot_ratio_lo, boot_ratio_hi) if boot_ratio_lo is not None else None
-    boot_mean_ci = (boot_mean_lo, boot_mean_hi) if boot_mean_lo is not None else None
+    boot_ratio_ci = (
+        (boot_ratio_lo, boot_ratio_hi)
+        if boot_ratio_lo is not None and boot_ratio_hi is not None
+        else None
+    )
+    boot_mean_ci = (
+        (boot_mean_lo, boot_mean_hi)
+        if boot_mean_lo is not None and boot_mean_hi is not None
+        else None
+    )
 
     ratio_ci = _build_ci(
-        ratio, ratio_se.recommended, g, ci_level,
-        boot_ci=boot_ratio_ci, recommended_method=rec_method,
+        ratio,
+        ratio_se.recommended,
+        g,
+        ci_level,
+        boot_ci=boot_ratio_ci,
+        recommended_method=rec_method,
     )
     mean_ci = _build_ci(
-        photo_mean, mean_se.recommended, g, ci_level,
-        boot_ci=boot_mean_ci, recommended_method=rec_method,
+        photo_mean,
+        mean_se.recommended,
+        g,
+        ci_level,
+        boot_ci=boot_mean_ci,
+        recommended_method=rec_method,
     )
 
     # ── Diagnostics ───────────────────────────────────────────────
@@ -373,6 +572,22 @@ def estimate(
         else float("nan")
     )
 
+    dep: dict[str, float] = {}
+    if n_positive > 2 and (lon_var is not None or time_var is not None):
+        dep = _dependence_diagnostics(
+            data,
+            mask,
+            p_obs,
+            lab_pos,
+            lon_var,
+            lat_var,
+            time_var,
+            seed,
+        )
+
+    def _dep(key: str) -> float:
+        return dep.get(key, float("nan"))
+
     diagnostics = Diagnostics(
         n_obs=n,
         n_positive_frames=n_positive,
@@ -381,15 +596,23 @@ def estimate(
         n_clusters=g,
         cluster_sizes=cluster_sizes,
         cluster_size_mean=m_bar,
-        cluster_size_cv=(
-            float(cluster_sizes.std() / cluster_sizes.mean())
-            if m_bar > 0 else 0.0
-        ),
+        cluster_size_cv=(float(cluster_sizes.std() / cluster_sizes.mean()) if m_bar > 0 else 0.0),
         icc=icc,
         deff=deff,
         n_eff=n_eff,
         se_ratio_cluster_to_naive=se_ratio_cn,
         ratio_bias_approx=_ratio_bias_approx(w, h),
+        morans_i_space=_dep("morans_i_space"),
+        morans_i_space_p=_dep("morans_i_space_p"),
+        variogram_range_m=_dep("variogram_range_m"),
+        spatial_corr_ratio=_dep("spatial_corr_ratio"),
+        n_eff_space=_dep("n_eff_space"),
+        morans_i_time=_dep("morans_i_time"),
+        morans_i_time_p=_dep("morans_i_time_p"),
+        variogram_range_s=_dep("variogram_range_s"),
+        temporal_corr_ratio=_dep("temporal_corr_ratio"),
+        n_eff_time=_dep("n_eff_time"),
+        within_between_ratio=_dep("within_between_ratio"),
     )
 
     return InferenceResult(
