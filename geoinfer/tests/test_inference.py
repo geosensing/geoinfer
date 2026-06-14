@@ -45,6 +45,13 @@ class TestDesigns(unittest.TestCase):
         self.assertEqual(d.name, "point_srs_clustered")
         self.assertTrue(d.has_clusters)
         self.assertFalse(d.has_weights)
+        # Clustered designs default to cluster-robust SE (naive undercovers
+        # under within-itinerary spatial autocorrelation).
+        self.assertEqual(d.recommended_se_method, "cluster")
+
+    def test_point_design_srs_unclustered_is_naive(self):
+        d = PointDesign(sampling="srs")
+        self.assertFalse(d.has_clusters)
         self.assertEqual(d.recommended_se_method, "naive")
 
     def test_point_design_pps_requires_weights(self):
