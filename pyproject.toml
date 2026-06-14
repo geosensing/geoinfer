@@ -34,6 +34,9 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]
 dev = ["ruff>=0.1.0", "mypy>=1.5.0"]
+# The real geo_sampling -> allocator pipeline, used by geoinfer.pipeline and the
+# validation example. Imported lazily; core geoinfer needs none of it.
+pipeline = ["allocator", "geo-sampling"]
 
 [tool.pytest.ini_options]
 testpaths = ["geoinfer/tests"]

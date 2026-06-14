@@ -16,6 +16,7 @@ __version__ = "0.1.0"
 
 from .designs import Design, PointDesign, WalkDesign
 from .inference import estimate
+from .io import estimate_from_csv
 from .types import CIResult, Diagnostics, InferenceResult, SEResult
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "SEResult",
     "WalkDesign",
     "estimate",
+    "estimate_from_csv",
 ]

@@ -42,6 +42,7 @@ from scipy import stats as sp_stats
 from .designs import PointDesign
 from .inference import estimate, wild_cluster_bootstrap_ci
 from .spatial import haversine_matrix
+from .types import InferenceResult
 
 
 def _expit(x: np.ndarray) -> np.ndarray:
@@ -159,9 +160,24 @@ class PopulationFactory:
     draw is just two matrix-vector products.
     """
 
-    def __init__(self, cfg: SimConfig) -> None:
+    def __init__(
+        self,
+        cfg: SimConfig,
+        lon: np.ndarray | None = None,
+        lat: np.ndarray | None = None,
+    ) -> None:
+        """Build geometry + covariance factors.
+
+        With ``lon``/``lat`` given, the field is defined on those real point
+        locations (e.g. allocator/geo_sampling output); otherwise a regular
+        ``grid_n × grid_n`` grid is built from ``cfg``.
+        """
         self.cfg = cfg
-        self.lon, self.lat = _build_grid(cfg)
+        if lon is not None and lat is not None:
+            self.lon = np.asarray(lon, dtype=float)
+            self.lat = np.asarray(lat, dtype=float)
+        else:
+            self.lon, self.lat = _build_grid(cfg)
         self.dist_m = haversine_matrix(self.lon, self.lat)
         self.l_s = _spatial_chol(self.dist_m, cfg.range_s_m, cfg.sd_s)
         self.t_grid = np.linspace(0.0, cfg.day_min, cfg.time_grid_n)
@@ -374,6 +390,82 @@ class PipelineResult:
         }
 
 
+def _method_ci(
+    res: InferenceResult,
+    frames: pd.DataFrame,
+    se_method: str,
+    ci_level: float,
+    recommended: str,
+    boot_seed: int,
+) -> tuple[float, float, float]:
+    """Return (se, ci_lo, ci_hi) for one estimate under the chosen SE method.
+
+    Shared by the synthetic and scene-based Monte Carlo loops so they treat
+    every SE method identically: naive/cluster/auto use a normal or t_{G-1}
+    critical value, "boot" uses the pairs-bootstrap percentile CI, "wcb" the
+    wild cluster bootstrap percentile-t CI.
+    """
+    if se_method == "wcb":
+        return wild_cluster_bootstrap_ci(
+            frames["n_women"].to_numpy(dtype=float),
+            frames["n_people"].to_numpy(dtype=float),
+            frames["itinerary_id"].to_numpy(),
+            reps=599,
+            ci_level=ci_level,
+            seed=boot_seed,
+        )
+    if se_method == "boot":
+        se = res.ratio_se.bootstrap if res.ratio_se.bootstrap else float("nan")
+        ci = res.ratio_ci.bootstrap
+        lo, hi = ci if ci is not None else (float("nan"), float("nan"))
+        return se, lo, hi
+
+    if se_method == "naive":
+        se = res.ratio_se.naive
+    elif se_method == "cluster":
+        se = res.ratio_se.cluster
+    else:
+        se = res.ratio_se.recommended
+
+    use_cluster = se_method == "cluster" or (se_method == "auto" and recommended == "cluster")
+    if use_cluster and res.n_clusters >= 2:
+        crit = float(-sp_stats.t.ppf((1 - ci_level) / 2, df=res.n_clusters - 1))
+    else:
+        crit = float(-sp_stats.norm.ppf((1 - ci_level) / 2))
+    return se, res.ratio - crit * se, res.ratio + crit * se
+
+
+def _aggregate(
+    name: str,
+    se_method: str,
+    diffs: list[float],
+    ses: list[float],
+    covers: int,
+    ns: list[float],
+    dists: list[float],
+    neff: list[float],
+    wb: list[float],
+    valid: int,
+) -> PipelineResult:
+    """Collapse per-sim records into a ``PipelineResult``."""
+    diffs_a = np.array(diffs)
+    sd = float(np.std(diffs_a, ddof=1)) if valid > 1 else float("nan")
+    return PipelineResult(
+        name=name,
+        se_method=se_method,
+        n_sims=valid,
+        mean_n=float(np.mean(ns)) if ns else float("nan"),
+        mean_dist_km=float(np.mean(dists)) if dists else float("nan"),
+        bias=float(np.mean(diffs_a)) if valid else float("nan"),
+        true_sd=sd,
+        mean_se=float(np.mean(ses)) if ses else float("nan"),
+        se_sd_ratio=float(np.mean(ses) / sd) if valid > 1 and sd > 0 else float("nan"),
+        coverage=covers / valid if valid else float("nan"),
+        mean_n_eff_space=float(np.nanmean(neff)) if neff else float("nan"),
+        mean_within_between=float(np.nanmean(wb)) if wb else float("nan"),
+    )
+
+
 def run_pipeline(
     factory: PopulationFactory,
     pipe: Pipeline,
@@ -382,26 +474,24 @@ def run_pipeline(
     ci_level: float = 0.95,
     spatial_diag: bool = False,
 ) -> PipelineResult:
-    """Monte Carlo a single pipeline; return aggregated metrics.
+    """Monte Carlo a single synthetic pipeline; return aggregated metrics.
 
     Args:
         factory: Precomputed population factory (geometry + covariance).
-        pipe: The collection strategy to simulate.
+        pipe: The collection strategy to simulate (synthetic routing).
         cfg: Simulation configuration (DGP + field operation + Monte Carlo).
-        se_method: Which standard error drives the CI — "auto" (the design's
-            recommendation), "naive", "cluster" (analytic robust with t_{G-1}),
-            "boot" (pairs/cluster bootstrap), or "wcb" (wild cluster bootstrap,
-            percentile-t). Overriding lets us expose the naive-SE coverage
-            cliff and compare cluster-aware methods head to head.
+        se_method: Which standard error drives the CI — "auto", "naive",
+            "cluster" (analytic robust with t_{G-1}), "boot" (pairs bootstrap),
+            or "wcb" (wild cluster bootstrap).
         ci_level: Nominal confidence level.
-        spatial_diag: If True, also collect the spatial dependence diagnostics
-            (slower; enables the n_eff / within-between columns).
+        spatial_diag: If True, also collect the spatial dependence diagnostics.
 
     Returns:
-        A ``PipelineResult`` aggregating bias, true SD, SE calibration, and
-        coverage over ``cfg.n_sims`` simulations.
+        A ``PipelineResult`` over ``cfg.n_sims`` simulations.
     """
     rng = np.random.default_rng(cfg.seed + _name_seed(pipe.name))
+    design = PointDesign(sampling="srs", cluster_var="itinerary_id")
+    rec = design.recommended_se_method
 
     diffs: list[float] = []
     ses: list[float] = []
@@ -412,27 +502,11 @@ def run_pipeline(
     wb: list[float] = []
     valid = 0
 
-    z = float(-sp_stats.norm.ppf((1 - ci_level) / 2))
-
-    def _crit(method: str, n_clusters: int) -> float:
-        """Critical value for the CI: t_{G-1} for cluster SE, else normal z."""
-        # Cluster SE with few itineraries needs the t_{G-1} critical value
-        # (Ibragimov-Müller few-clusters correction); naive SE uses normal.
-        use_cluster = method == "cluster" or (
-            method == "auto" and design.recommended_se_method == "cluster"
-        )
-        if use_cluster and n_clusters >= 2:
-            return float(-sp_stats.t.ppf((1 - ci_level) / 2, df=n_clusters - 1))
-        return z
-
-    design = PointDesign(sampling="srs", cluster_var="itinerary_id")
-
     for _ in range(cfg.n_sims):
         pop = factory.draw(rng)
         df = collect(pop, pipe, cfg, rng)
         if len(df) < cfg.n_itineraries:
             continue
-
         res = estimate(
             df,
             "n_women",
@@ -446,32 +520,9 @@ def run_pipeline(
         )
         if np.isnan(res.ratio):
             continue
-
-        # Compute (se, ci) for the requested method.
-        if se_method == "wcb":
-            w = df["n_women"].to_numpy(dtype=float)
-            h = df["n_people"].to_numpy(dtype=float)
-            lab = df["itinerary_id"].to_numpy()
-            se, lo, hi = wild_cluster_bootstrap_ci(
-                w, h, lab, reps=599, ci_level=ci_level, seed=valid + 1
-            )
-        elif se_method == "boot":
-            se = res.ratio_se.bootstrap if res.ratio_se.bootstrap else float("nan")
-            ci = res.ratio_ci.bootstrap
-            lo, hi = ci if ci is not None else (float("nan"), float("nan"))
-        else:
-            if se_method == "naive":
-                se = res.ratio_se.naive
-            elif se_method == "cluster":
-                se = res.ratio_se.cluster
-            else:
-                se = res.ratio_se.recommended
-            crit = _crit(se_method, res.n_clusters)
-            lo, hi = res.ratio - crit * se, res.ratio + crit * se
-
-        if not np.isfinite(se) or not np.isfinite(lo) or not np.isfinite(hi):
+        se, lo, hi = _method_ci(res, df, se_method, ci_level, rec, valid + 1)
+        if not (np.isfinite(se) and np.isfinite(lo) and np.isfinite(hi)):
             continue
-
         valid += 1
         diffs.append(res.ratio - pop.beta_true)
         ses.append(se)
@@ -482,25 +533,103 @@ def run_pipeline(
             neff.append(res.diagnostics.n_eff_space)
             wb.append(res.diagnostics.within_between_ratio)
 
-    diffs_a = np.array(diffs)
-    return PipelineResult(
-        name=pipe.name,
-        se_method=se_method,
-        n_sims=valid,
-        mean_n=float(np.mean(ns)) if ns else float("nan"),
-        mean_dist_km=float(np.mean(dists)) if dists else float("nan"),
-        bias=float(np.mean(diffs_a)) if valid else float("nan"),
-        true_sd=float(np.std(diffs_a, ddof=1)) if valid > 1 else float("nan"),
-        mean_se=float(np.mean(ses)) if ses else float("nan"),
-        se_sd_ratio=(
-            float(np.mean(ses) / np.std(diffs_a, ddof=1))
-            if valid > 1 and np.std(diffs_a, ddof=1) > 0
-            else float("nan")
-        ),
-        coverage=covers / valid if valid else float("nan"),
-        mean_n_eff_space=float(np.nanmean(neff)) if neff else float("nan"),
-        mean_within_between=float(np.nanmean(wb)) if wb else float("nan"),
-    )
+    return _aggregate(pipe.name, se_method, diffs, ses, covers, ns, dists, neff, wb, valid)
+
+
+def evaluate_scene(
+    factory: PopulationFactory,
+    sample_idx: np.ndarray,
+    itinerary_id: np.ndarray,
+    time_of_day_min: np.ndarray,
+    timestamp_s: np.ndarray,
+    cfg: SimConfig,
+    se_method: str = "auto",
+    ci_level: float = 0.95,
+    spatial_diag: bool = True,
+    label: str = "scene",
+) -> PipelineResult:
+    """Design-conditional Monte Carlo of a realized survey against the city mean.
+
+    ``factory`` carries the field on the **whole city universe**; the survey is
+    a fixed **subsample** of it (``sample_idx``) with a fixed itinerary
+    partition and visit times (you ran geo_sampling + the allocator once). Each
+    simulation redraws the outcome field, estimates the ratio from the observed
+    sample, and checks whether the CI covers the *universe* space-time mean.
+    Because the sample is a strict subset of the universe, β̂ carries genuine
+    spatial sampling error — exactly what the cluster SE must capture — so this
+    is a real test of whether ``estimate``'s SE/CI is honest for that design.
+
+    Args:
+        factory: ``PopulationFactory(cfg, lon, lat)`` built on ALL city points.
+        sample_idx: Indices (into the factory universe) of the observed frames.
+        itinerary_id: Per-frame cluster labels, aligned to ``sample_idx``.
+        time_of_day_min: Per-frame time-of-day in ``[0, day_min]`` minutes —
+            drives the diurnal/temporal field component.
+        timestamp_s: Per-frame absolute timestamp in seconds across the whole
+            operation — fed to ``estimate`` as ``time_var``.
+        cfg: Simulation configuration (DGP + Monte Carlo).
+        se_method, ci_level, spatial_diag: As in ``run_pipeline``.
+        label: Names the RNG stream / result row.
+
+    Returns:
+        A ``PipelineResult`` over ``cfg.n_sims`` field redraws.
+    """
+    rng = np.random.default_rng(cfg.seed + _name_seed(label))
+    design = PointDesign(sampling="srs", cluster_var="itinerary_id")
+    rec = design.recommended_se_method
+    idx = np.asarray(sample_idx, dtype=int)
+    m = len(idx)
+    tod = np.asarray(time_of_day_min, dtype=float)
+    itin = np.asarray(itinerary_id)
+    ts = np.asarray(timestamp_s, dtype=float)
+    lon_s = factory.lon[idx]
+    lat_s = factory.lat[idx]
+
+    diffs: list[float] = []
+    ses: list[float] = []
+    covers = 0
+    neff: list[float] = []
+    wb: list[float] = []
+    valid = 0
+
+    for _ in range(cfg.n_sims):
+        pop = factory.draw(rng)
+        p = pop.p_at(idx, tod)
+        frames = pd.DataFrame(
+            {
+                "n_women": p,
+                "n_people": np.ones(m),
+                "itinerary_id": itin,
+                "longitude": lon_s,
+                "latitude": lat_s,
+                "timestamp": ts,
+            }
+        )
+        res = estimate(
+            frames,
+            "n_women",
+            "n_people",
+            design=design,
+            bootstrap=(se_method == "boot"),
+            bootstrap_reps=599,
+            lon_var="longitude" if spatial_diag else None,
+            lat_var="latitude" if spatial_diag else None,
+            time_var="timestamp" if spatial_diag else None,
+        )
+        if np.isnan(res.ratio):
+            continue
+        se, lo, hi = _method_ci(res, frames, se_method, ci_level, rec, valid + 1)
+        if not (np.isfinite(se) and np.isfinite(lo) and np.isfinite(hi)):
+            continue
+        valid += 1
+        diffs.append(res.ratio - pop.beta_true)
+        ses.append(se)
+        covers += int(lo <= pop.beta_true <= hi)
+        if spatial_diag:
+            neff.append(res.diagnostics.n_eff_space)
+            wb.append(res.diagnostics.within_between_ratio)
+
+    return _aggregate(label, se_method, diffs, ses, covers, [float(m)], [], neff, wb, valid)
 
 
 def run_experiment(

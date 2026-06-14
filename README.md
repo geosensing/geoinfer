@@ -40,9 +40,45 @@ print(result.summary())
 
 ## Two designs
 
-**PointDesign**: Discrete locations sampled by geo-sampling, grouped into itineraries by allocator. Under SRS, observations are approximately independent (our simulation finding), so the naive SE is the primary estimator and the cluster-robust SE is a robustness check.
+**PointDesign**: Discrete locations sampled by geo-sampling, grouped into itineraries by allocator. Clustered designs default to the **cluster-robust SE** (with a `t_{G-1}` CI for few itineraries) — the safe choice. When points are an SRS/probability sample and itineraries are only a *post-hoc* bundling (the usual case), the naive SE is also valid and a bit tighter, while the cluster SE is conservative; when the routing itself determines which points get observed, the cluster SE is required and the naive SE under-covers. Simulation (below) lets you check which regime you're in.
 
 **WalkDesign**: Continuous random walks on the road network. Walks are independent by construction. The between-walk SE is the correct and only estimator.
+
+## Within-itinerary dependence diagnostics
+
+If the annotated frames carry coordinates and/or a timestamp, pass them and `estimate` reports how much within-itinerary correlation there is and how fast it decays — separately on the **spatial** (great-circle) and **temporal** (time-gap) axes:
+
+```python
+result = estimate(
+    df, "n_women", "n_people",
+    design=PointDesign(sampling="srs", cluster_var="itinerary_id"),
+    lon_var="longitude", lat_var="latitude", time_var="timestamp",
+)
+```
+
+You get an empirical variogram range, Moran's I (+ permutation p-value), a variogram-based **effective sample size** per axis (Griffith 2005; Watson 2021), and a within- vs between-itinerary semivariance ratio — so you can see whether the (stochastic) itinerary partition actually costs you information, and on which axis.
+
+## Estimate from a CSV (production)
+
+```python
+from geoinfer import estimate_from_csv
+
+result = estimate_from_csv("frames.csv")   # uses any of the optional columns present
+print(result.summary())
+```
+
+Expected columns (all configurable): `n_women`, `n_people` (required), `itinerary_id`, `longitude`, `latitude`, `timestamp` (optional — diagnostics turn on when present). Or from the shell: `python -m geoinfer.io estimate frames.csv`.
+
+## Validate a design before you trust the numbers
+
+`geoinfer.simulate` + `geoinfer.pipeline` (install the `pipeline` extra) overlay a known space-time process on the **real** geo-sampling → allocator geometry and Monte-Carlo whether the CIs cover the truth:
+
+```bash
+pip install geoinfer[pipeline]
+python examples/validate_with_allocator.py
+```
+
+This reports bias, SE calibration, and coverage by SE method on a realistic survey (hundreds of itineraries over weeks), and surfaces failure modes — e.g. synchronized shift start-times biasing the estimate when the outcome varies by time of day.
 
 ## What you get back
 
@@ -56,12 +92,12 @@ Clusters: 10
 
 ── Ratio estimand (people-weighted) ──
   Estimate:  0.2987
-  SE:        0.0109  (naive)
+  SE:        0.0109  (cluster)
   95% CI:    [0.2773, 0.3201]
 
 ── Photo-level mean (location-weighted) ──
   Estimate:  0.3014
-  SE:        0.0128  (naive)
+  SE:        0.0128  (cluster)
   95% CI:    [0.2764, 0.3265]
 
 ── Diagnostics ──
