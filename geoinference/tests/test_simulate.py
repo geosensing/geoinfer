@@ -10,7 +10,7 @@ being flaky.
 import unittest
 import warnings
 
-from geoinfer.simulate import (
+from geoinference.simulate import (
     Pipeline,
     PopulationFactory,
     SimConfig,

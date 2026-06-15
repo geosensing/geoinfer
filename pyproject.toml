@@ -3,7 +3,7 @@ requires = ["uv_build>=0.9.14,<0.10.0"]
 build-backend = "uv_build"
 
 [project]
-name = "geoinfer"
+name = "geoinference"
 version = "0.1.0"
 description = "Design-based inference for spatially distributed observation surveys"
 readme = "README.md"
@@ -32,20 +32,20 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/geosensing/geoinfer"
-Repository = "https://github.com/geosensing/geoinfer"
-Documentation = "https://geosensing.github.io/geoinfer/"
-Issues = "https://github.com/geosensing/geoinfer/issues"
+Homepage = "https://github.com/geosensing/geoinference"
+Repository = "https://github.com/geosensing/geoinference"
+Documentation = "https://geosensing.github.io/geoinference/"
+Issues = "https://github.com/geosensing/geoinference/issues"
 
 [project.optional-dependencies]
 test = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]
 dev = ["ruff>=0.1.0", "mypy>=1.5.0"]
-# The real geo_sampling -> allocator pipeline, used by geoinfer.pipeline and the
-# validation example. Imported lazily; core geoinfer needs none of it.
+# The real geo_sampling -> allocator pipeline, used by geoinference.pipeline and the
+# validation example. Imported lazily; core geoinference needs none of it.
 pipeline = ["allocator", "geo-sampling"]
 
 [tool.uv.build-backend]
-module-name = "geoinfer"
+module-name = "geoinference"
 module-root = ""
 
 [dependency-groups]
@@ -61,7 +61,7 @@ docs = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["geoinfer/tests"]
+testpaths = ["geoinference/tests"]
 
 [tool.ruff]
 target-version = "py311"
@@ -71,10 +71,10 @@ line-length = 100
 python_version = "3.11"
 warn_return_any = true
 disallow_untyped_defs = true
-exclude = ["geoinfer/tests/"]
+exclude = ["geoinference/tests/"]
 
 [[tool.mypy.overrides]]
-module = ["geoinfer.tests.*"]
+module = ["geoinference.tests.*"]
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]

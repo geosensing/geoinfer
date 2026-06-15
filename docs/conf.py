@@ -1,14 +1,14 @@
-"""Sphinx configuration for the geoinfer documentation."""
+"""Sphinx configuration for the geoinference documentation."""
 
 from importlib import metadata
 
 # -- Project information ------------------------------------------------------
 
-meta = metadata.metadata("geoinfer")
-project = "geoinfer"
+meta = metadata.metadata("geoinference")
+project = "geoinference"
 author = meta.get("Author-email", "Gaurav Sood")
 copyright = "2026, Gaurav Sood"
-version = metadata.version("geoinfer")
+version = metadata.version("geoinference")
 release = version
 
 # -- General configuration ----------------------------------------------------
@@ -69,7 +69,7 @@ intersphinx_mapping = {
 html_theme = "furo"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
-html_title = f"geoinfer {version}"
+html_title = f"geoinference {version}"
 html_theme_options = {
     "light_css_variables": {
         "color-brand-primary": "#2563eb",
@@ -79,7 +79,7 @@ html_theme_options = {
         "color-brand-primary": "#3b82f6",
         "color-brand-content": "#3b82f6",
     },
-    "source_repository": "https://github.com/geosensing/geoinfer/",
+    "source_repository": "https://github.com/geosensing/geoinference/",
     "source_branch": "main",
     "source_directory": "docs/",
 }

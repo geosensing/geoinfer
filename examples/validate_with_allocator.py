@@ -1,5 +1,5 @@
 """
-Validate geoinfer's standard errors on the REAL geo_sampling -> allocator
+Validate geoinference's standard errors on the REAL geo_sampling -> allocator
 pipeline, then show the production estimate path.
 
 What this does, end to end:
@@ -10,7 +10,7 @@ What this does, end to end:
    the real ``allocator`` (this is the design you actually run in the field),
    spread over a multi-week operation.
 3. Overlay a known space-time data-generating process and Monte-Carlo
-   ``geoinfer.estimate``: does each SE method's CI cover the true CITY mean?
+   ``geoinference.estimate``: does each SE method's CI cover the true CITY mean?
 
 Two scenarios make the design lessons concrete:
 
@@ -29,7 +29,7 @@ Run:
     python examples/validate_with_allocator.py
     python examples/validate_with_allocator.py --method random_partition --n-sims 300
 
-Requires the pipeline extra:  pip install geoinfer[pipeline]
+Requires the pipeline extra:  pip install geoinference[pipeline]
 (or: uv pip install -e ../allocator ../geo_sampling)
 """
 
@@ -38,9 +38,9 @@ import argparse
 import numpy as np
 import pandas as pd
 
-from geoinfer import PointDesign, estimate
-from geoinfer.pipeline import points_from_roads, sample_points, subsample_scene
-from geoinfer.simulate import (
+from geoinference import PointDesign, estimate
+from geoinference.pipeline import points_from_roads, sample_points, subsample_scene
+from geoinference.simulate import (
     PopulationFactory,
     SimConfig,
     evaluate_scene,

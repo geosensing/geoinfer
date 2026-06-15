@@ -2,10 +2,10 @@
 Tests for the spatial/temporal dependence diagnostics and the simulation
 harness.
 
-The unit tests check the measurement primitives (``geoinfer.spatial``); the
+The unit tests check the measurement primitives (``geoinference.spatial``); the
 integration tests wire them through ``estimate``; the simulation tests assert
 the analytically-predicted limiting cases (the "truth table" in
-``geoinfer.simulate``).
+``geoinference.simulate``).
 """
 
 import unittest
@@ -14,8 +14,8 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from geoinfer import PointDesign, estimate
-from geoinfer.spatial import (
+from geoinference import PointDesign, estimate
+from geoinference.spatial import (
     effective_n,
     empirical_variogram,
     fit_variogram,

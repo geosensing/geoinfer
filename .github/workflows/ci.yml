@@ -28,13 +28,13 @@ jobs:
         run: uv sync --group dev --group test
 
       - name: Ruff lint
-        run: uv run ruff check geoinfer/ examples/
+        run: uv run ruff check geoinference/ examples/
 
       - name: Ruff format check
-        run: uv run ruff format --check geoinfer/ examples/
+        run: uv run ruff format --check geoinference/ examples/
 
       - name: Type check (mypy)
-        run: uv run mypy geoinfer/
+        run: uv run mypy geoinference/
 
       - name: Tests
         run: uv run pytest

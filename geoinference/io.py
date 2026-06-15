@@ -1,5 +1,5 @@
 """
-Run geoinfer on a real annotated-frames table — the production endpoint.
+Run geoinference on a real annotated-frames table — the production endpoint.
 
 ``estimate_from_csv`` reads an annotated-frames CSV (one row per frame, as
 produced downstream of the geosensing pipeline) and returns a full
@@ -16,7 +16,7 @@ Expected columns (all configurable):
     latitude      decimal degrees, optional                (lat_var)
     timestamp     datetime or epoch seconds, optional      (time_var)
 
-CLI:  python -m geoinfer.io estimate frames.csv [--cluster-var itinerary_id]
+CLI:  python -m geoinference.io estimate frames.csv [--cluster-var itinerary_id]
 """
 
 import argparse
@@ -86,8 +86,8 @@ def estimate_from_csv(
 
 
 def main(argv: list[str] | None = None) -> None:
-    """CLI: ``python -m geoinfer.io estimate frames.csv``."""
-    parser = argparse.ArgumentParser(prog="geoinfer.io", description=__doc__)
+    """CLI: ``python -m geoinference.io estimate frames.csv``."""
+    parser = argparse.ArgumentParser(prog="geoinference.io", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     est = sub.add_parser("estimate", help="estimate from an annotated-frames CSV")
     est.add_argument("path")

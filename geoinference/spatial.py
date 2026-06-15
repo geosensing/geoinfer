@@ -1,5 +1,5 @@
 """
-Spatial and temporal dependence diagnostics for geoinfer.
+Spatial and temporal dependence diagnostics for geoinference.
 
 These functions measure how much within-itinerary correlation there is and
 how fast it decays along an axis — geographic distance, time gap, or any

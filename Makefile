@@ -4,13 +4,13 @@ install:        ## Sync all dependency groups into the uv environment
 	uv sync --all-groups
 
 lint:           ## Ruff lint
-	uv run ruff check geoinfer/ examples/
+	uv run ruff check geoinference/ examples/
 
 format:         ## Ruff format (writes changes)
-	uv run ruff format geoinfer/ examples/
+	uv run ruff format geoinference/ examples/
 
 typecheck:      ## Mypy on the package source
-	uv run mypy geoinfer/
+	uv run mypy geoinference/
 
 test:           ## Run the test suite
 	uv run pytest

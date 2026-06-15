@@ -1,16 +1,16 @@
 """
-Bridge from the real geosensing pipeline to a geoinfer simulation scene.
+Bridge from the real geosensing pipeline to a geoinference simulation scene.
 
 This turns the actual ``geo_sampling`` → ``allocator`` output into a fixed
 "scene" — point coordinates, the itinerary partition, and per-frame visit
 times spread over a multi-day field operation — that
-``geoinfer.simulate.evaluate_scene`` can validate a DGP against, and that
+``geoinference.simulate.evaluate_scene`` can validate a DGP against, and that
 mirrors what the annotated frames look like in production.
 
 ``allocator`` and ``geo_sampling`` are optional; install them with
-``pip install geoinfer[pipeline]`` (or ``uv pip install -e ../allocator
+``pip install geoinference[pipeline]`` (or ``uv pip install -e ../allocator
 ../geo_sampling`` for local checkouts). They are imported lazily so core
-geoinfer keeps no heavy dependencies.
+geoinference keeps no heavy dependencies.
 """
 
 from dataclasses import dataclass
@@ -20,7 +20,7 @@ import pandas as pd
 
 from .spatial import haversine_matrix
 
-_PIPELINE_HINT = "install the pipeline extra:  pip install geoinfer[pipeline]"
+_PIPELINE_HINT = "install the pipeline extra:  pip install geoinference[pipeline]"
 
 
 @dataclass
@@ -250,7 +250,7 @@ def subsample_scene(
     ``geo_sampling``), and routes the sample with the allocator. Returns
     ``(sample_idx, scene)`` where ``sample_idx`` indexes the universe (so the
     field can be drawn on the whole city and the sample scored against the city
-    mean in ``geoinfer.simulate.evaluate_scene``).
+    mean in ``geoinference.simulate.evaluate_scene``).
     """
     points = points_from_roads(universe)
     n_uni = len(points)

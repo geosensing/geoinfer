@@ -1,5 +1,5 @@
 """
-Design specifications for geoinfer.
+Design specifications for geoinference.
 
 A design object encodes how the data was collected — the sampling
 mechanism, the clustering structure, the weighting scheme — so that

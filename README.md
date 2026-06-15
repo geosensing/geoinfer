@@ -1,29 +1,29 @@
-# geoinfer
+# geoinference
 
 Design-based inference for spatially distributed observation surveys.
 
-[![PyPI](https://img.shields.io/pypi/v/geoinfer.svg)](https://pypi.org/project/geoinfer/)
-[![Downloads](https://static.pepy.tech/badge/geoinfer)](https://pepy.tech/project/geoinfer)
-[![CI](https://github.com/geosensing/geoinfer/actions/workflows/ci.yml/badge.svg)](https://github.com/geosensing/geoinfer/actions/workflows/ci.yml)
-[![Docs](https://github.com/geosensing/geoinfer/actions/workflows/docs.yml/badge.svg)](https://geosensing.github.io/geoinfer/)
+[![PyPI](https://img.shields.io/pypi/v/geoinference.svg)](https://pypi.org/project/geoinference/)
+[![Downloads](https://static.pepy.tech/badge/geoinference)](https://pepy.tech/project/geoinference)
+[![CI](https://github.com/geosensing/geoinference/actions/workflows/ci.yml/badge.svg)](https://github.com/geosensing/geoinference/actions/workflows/ci.yml)
+[![Docs](https://github.com/geosensing/geoinference/actions/workflows/docs.yml/badge.svg)](https://geosensing.github.io/geoinference/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 ## What this does
 
 You collected street-level data using [geo-sampling](https://github.com/geosensing/geo-sampling) and [allocator](https://github.com/geosensing/allocator). You have a DataFrame of annotated frames with women counts and people counts. You want an unbiased estimate of the gender ratio with a correct standard error.
 
-`geoinfer` takes the annotated data plus a description of how it was collected (the *design*) and produces point estimates, standard errors, confidence intervals, and diagnostics — with the right SE estimator chosen automatically.
+`geoinference` takes the annotated data plus a description of how it was collected (the *design*) and produces point estimates, standard errors, confidence intervals, and diagnostics — with the right SE estimator chosen automatically.
 
 ## Install
 
 ```bash
-pip install geoinfer
+pip install geoinference
 ```
 
 ## Quick start
 
 ```python
-from geoinfer import PointDesign, WalkDesign, estimate
+from geoinference import PointDesign, WalkDesign, estimate
 
 # Point-based pipeline (geo-sampling → allocator → annotate)
 design = PointDesign(sampling="srs", cluster_var="itinerary_id")
@@ -65,20 +65,20 @@ You get an empirical variogram range, Moran's I (+ permutation p-value), a vario
 ## Estimate from a CSV (production)
 
 ```python
-from geoinfer import estimate_from_csv
+from geoinference import estimate_from_csv
 
 result = estimate_from_csv("frames.csv")   # uses any of the optional columns present
 print(result.summary())
 ```
 
-Expected columns (all configurable): `n_women`, `n_people` (required), `itinerary_id`, `longitude`, `latitude`, `timestamp` (optional — diagnostics turn on when present). Or from the shell: `python -m geoinfer.io estimate frames.csv`.
+Expected columns (all configurable): `n_women`, `n_people` (required), `itinerary_id`, `longitude`, `latitude`, `timestamp` (optional — diagnostics turn on when present). Or from the shell: `python -m geoinference.io estimate frames.csv`.
 
 ## Validate a design before you trust the numbers
 
-`geoinfer.simulate` + `geoinfer.pipeline` (install the `pipeline` extra) overlay a known space-time process on the **real** geo-sampling → allocator geometry and Monte-Carlo whether the CIs cover the truth:
+`geoinference.simulate` + `geoinference.pipeline` (install the `pipeline` extra) overlay a known space-time process on the **real** geo-sampling → allocator geometry and Monte-Carlo whether the CIs cover the truth:
 
 ```bash
-pip install geoinfer[pipeline]
+pip install geoinference[pipeline]
 python examples/validate_with_allocator.py
 ```
 
@@ -88,7 +88,7 @@ This reports bias, SE calibration, and coverage by SE method on a realistic surv
 
 ```
 ============================================================
-geoinfer: Inference Result
+geoinference: Inference Result
 ============================================================
 Design: point_srs_clustered
 Observations: 200 (195 with h>0, 5 empty)

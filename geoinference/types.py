@@ -1,5 +1,5 @@
 """
-Result types for geoinfer.
+Result types for geoinference.
 
 Structured dataclasses that carry estimates, standard errors,
 confidence intervals, and diagnostics from the inference pipeline.
@@ -112,7 +112,7 @@ class InferenceResult:
         """Human-readable summary."""
         lines = [
             "=" * 60,
-            "geoinfer: Inference Result",
+            "geoinference: Inference Result",
             "=" * 60,
             f"Design: {self.design_name}",
             f"Observations: {self.n_obs} ({self.diagnostics.n_positive_frames} with h>0, "

@@ -1,5 +1,5 @@
 """
-Tests for geoinfer.
+Tests for geoinference.
 
 Unit tests for components plus simulation-based coverage tests
 that verify the SEs are accurate and CIs achieve nominal coverage.
@@ -10,7 +10,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from geoinfer import InferenceResult, PointDesign, WalkDesign, estimate
+from geoinference import InferenceResult, PointDesign, WalkDesign, estimate
 
 
 def _make_test_data(

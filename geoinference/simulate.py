@@ -6,7 +6,7 @@ space-time data-generating process (DGP) with no measurement noise, run real
 collection pipelines (sampling + routing under a fixed per-route time budget)
 on top, push the assumptions to their extremes, and check what happens to the
 bias, standard-error calibration, and confidence-interval coverage that
-``geoinfer.estimate`` produces.
+``geoinference.estimate`` produces.
 
 The analytically-predictable limits (the "truth table"):
 
@@ -671,7 +671,7 @@ def default_pipelines() -> list[Pipeline]:
 def main() -> None:
     """Reproduce the headline experiments and print them as tables.
 
-    Run with ``python -m geoinfer.simulate``.
+    Run with ``python -m geoinference.simulate``.
     """
     import warnings
 

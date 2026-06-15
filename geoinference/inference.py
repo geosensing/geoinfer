@@ -1,5 +1,5 @@
 """
-Inference engine for geoinfer.
+Inference engine for geoinference.
 
 The ``estimate()`` function is the main entry point. It takes annotated
 frame data plus a design object and returns point estimates, standard
@@ -439,7 +439,7 @@ def estimate(
         corresponding coordinate/time columns are supplied.
 
     Example:
-        >>> from geoinfer import PointDesign, estimate
+        >>> from geoinference import PointDesign, estimate
         >>> design = PointDesign(sampling="srs", cluster_var="itinerary_id")
         >>> result = estimate(df, "n_women", "n_people", design=design)
         >>> print(result.summary())

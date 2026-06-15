@@ -15,8 +15,8 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from geoinfer import estimate_from_csv
-from geoinfer.simulate import PopulationFactory, SimConfig, evaluate_scene
+from geoinference import estimate_from_csv
+from geoinference.simulate import PopulationFactory, SimConfig, evaluate_scene
 
 _HAS_ALLOCATOR = importlib.util.find_spec("allocator") is not None
 _DELHI = os.path.join(
@@ -83,7 +83,7 @@ class TestRealPipeline(unittest.TestCase):
         warnings.simplefilter("ignore")
 
     def test_subsample_scene_and_validate(self):
-        from geoinfer.pipeline import points_from_roads, subsample_scene
+        from geoinference.pipeline import points_from_roads, subsample_scene
 
         uni = points_from_roads(_DELHI, per_segment=4)
         self.assertEqual(len(uni), 4000)
